@@ -1,0 +1,41 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e8]: grid
+      - generic [ref=e9]: 5 tiles
+    - toolbar "Append tiles" [ref=e10]:
+      - button "Append Blank" [ref=e11] [cursor=pointer]:
+        - generic [ref=e15]: Blank
+      - button "Append Service" [active] [ref=e16] [cursor=pointer]:
+        - generic [ref=e21]: Service
+      - button "Append Terminal" [ref=e22] [cursor=pointer]:
+        - generic [ref=e26]: Terminal
+      - button "Clear all tiles" [ref=e28] [cursor=pointer]:
+        - generic [ref=e32]: Clear
+  - main "Dashboard grid" [ref=e33]:
+    - generic [ref=e35]:
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39]: api
+          - button "Remove api" [ref=e54] [cursor=pointer]
+        - generic [ref=e58]: running
+      - generic [ref=e74]:
+        - generic [ref=e75]:
+          - generic [ref=e76]: worker
+          - button "Remove worker" [ref=e91] [cursor=pointer]
+        - generic [ref=e95]: running
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - generic [ref=e113]: shell
+          - button "Remove shell" [ref=e127] [cursor=pointer]
+        - generic [ref=e131]: $ ready // drag · resize · append
+      - generic [ref=e145]:
+        - generic [ref=e146]:
+          - generic [ref=e147]: notes
+          - button "Remove notes" [ref=e161] [cursor=pointer]
+        - generic [ref=e165]: empty
+      - generic [ref=e179]:
+        - generic [ref=e180]:
+          - generic [ref=e181]: service-3
+          - button "Remove service-3" [ref=e196] [cursor=pointer]
+        - generic [ref=e200]: running

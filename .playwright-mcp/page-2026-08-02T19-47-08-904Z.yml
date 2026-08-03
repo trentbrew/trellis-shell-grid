@@ -1,0 +1,14 @@
+- generic [ref=f2e4]:
+  - generic [ref=f2e7]:
+    - generic [ref=f2e8]: Tiles
+    - button "Apply singleRow preset" [ref=f2e9] [cursor=pointer]: SingleRow
+    - button "Apply twoRows preset" [ref=f2e10] [cursor=pointer]: TwoRows
+    - button "Apply mixed preset" [ref=f2e11] [cursor=pointer]: Mixed
+  - separator "Resize panels" [ref=f2e12]
+  - generic [ref=f2e27]:
+    - button "Grid item A" [ref=f2e29]: A
+    - button "Grid item B" [ref=f2e32]: B
+    - button "Grid item C" [ref=f2e35]: C
+    - button "Grid item D" [ref=f2e38]: D
+    - button "Grid item E" [ref=f2e41]: E
+    - button "Grid item F" [ref=f2e44]: F
