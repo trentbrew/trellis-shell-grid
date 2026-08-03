@@ -12,6 +12,7 @@ import {
   DIRECT_GEOMETRY_MODES,
   WORLD_CAMERA_MODES,
 } from './layouts'
+import { loadPersistedState, savePersistedState } from '../persist/index.js'
 
 function buildInitial() {
   const main = seedMainSpace()
@@ -206,6 +207,18 @@ function reducer(state, action) {
       return patchActive(state, { windows })
     }
 
+    case 'hydrate': {
+      const p = action.persisted
+      if (!p || !Array.isArray(p.spaces) || !p.spaces.length) return state
+      return {
+        ...state,
+        spaces: p.spaces,
+        groups: p.groups ?? state.groups,
+        activeSpaceId: p.activeSpaceId ?? p.spaces[0].id,
+        morphGen: state.morphGen + 1,
+      }
+    }
+
     default:
       return state
   }
@@ -215,6 +228,29 @@ export function useWM() {
   const [state, dispatch] = useReducer(reducer, undefined, buildInitial)
   const stateRef = useRef(state)
   stateRef.current = state
+
+  // hydrate from persistence once on mount
+  useEffect(() => {
+    let cancelled = false
+    loadPersistedState()
+      .then((persisted) => {
+        if (!cancelled && persisted) {
+          dispatch({ type: 'hydrate', persisted })
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // debounced persist on durable state changes
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      savePersistedState(stateRef.current).catch(() => {})
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [state.spaces, state.activeSpaceId, state.groups])
 
   const space = activeSpace(state)
 
