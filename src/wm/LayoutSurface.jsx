@@ -4,13 +4,15 @@ import { WORLD_CAMERA_MODES, DIRECT_GEOMETRY_MODES } from './layouts'
 
 const MORPH_MS = 400
 const MORPH_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+const DOT = 24
 
 /**
  * Renders windows at computed rects. Morphs via FLIP on mode change.
- * Freeform: pan/zoom camera. Floating/freeform: drag chrome to move.
+ * Canvas (freeform): Figma-style pan/zoom — trackpad swipe pan, pinch zoom.
  */
 export function LayoutSurface({
   windows,
+  groups,
   layout,
   mode,
   focusId,
@@ -30,6 +32,8 @@ export function LayoutSurface({
   const dragRef = useRef(null)
   const spaceRef = useRef(false)
   const panRef = useRef(null)
+  const cameraRef = useRef(camera)
+  cameraRef.current = camera
 
   useEffect(() => {
     const el = hostRef.current
@@ -79,14 +83,14 @@ export function LayoutSurface({
       void node.offsetWidth
       node.style.transition = `transform ${MORPH_MS}ms ${MORPH_EASE}, opacity ${MORPH_MS}ms ${MORPH_EASE}`
       node.style.transform =
-        baseScale !== 1 ? `translate(0px, 0px) scale(${baseScale})` : 'translate(0px, 0px) scale(1)'
+        baseScale !== 1
+          ? `translate(0px, 0px) scale(${baseScale})`
+          : 'translate(0px, 0px) scale(1)'
 
       timers.push(
         window.setTimeout(() => {
-          // hand control back to React style props
           if (!node.isConnected) return
           node.style.transition = ''
-          // keep scale if layout wants it; otherwise clear
           if (baseScale === 1) node.style.transform = ''
         }, MORPH_MS + 30),
       )
@@ -94,44 +98,60 @@ export function LayoutSurface({
 
     prevRects.current = snapshotRects(next)
     return () => timers.forEach((t) => clearTimeout(t))
-    // only intentional morph triggers
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [morphGen])
 
-  // track latest rects after paint (drag / focus without full morph)
   useEffect(() => {
     prevRects.current = snapshotRects(layout.rects ?? {})
   }, [layout])
 
-  // wheel zoom
+  // Figma-style wheel: pinch/ctrl = zoom toward cursor; otherwise pan
   useEffect(() => {
     const el = hostRef.current
     if (!el || !WORLD_CAMERA_MODES.has(mode)) return
 
     const onWheel = (e) => {
       e.preventDefault()
+      const cam = cameraRef.current
       const bounds = el.getBoundingClientRect()
       const mx = e.clientX - bounds.left
       const my = e.clientY - bounds.top
-      const factor = e.deltaY > 0 ? 0.92 : 1.08
-      const nextZoom = clamp(camera.zoom * factor, 0.2, 3.5)
-      const worldX = (mx - camera.x) / camera.zoom
-      const worldY = (my - camera.y) / camera.zoom
+
+      // Pinch-to-zoom (trackpad) reports ctrlKey; cmd+scroll also zooms
+      const isZoom = e.ctrlKey || e.metaKey
+
+      if (isZoom) {
+        // deltaY is typically small for pinch; normalize
+        const intensity = Math.exp(-e.deltaY * 0.01)
+        const nextZoom = clamp(cam.zoom * intensity, 0.15, 4)
+        const worldX = (mx - cam.x) / cam.zoom
+        const worldY = (my - cam.y) / cam.zoom
+        onCamera({
+          zoom: nextZoom,
+          x: mx - worldX * nextZoom,
+          y: my - worldY * nextZoom,
+        })
+        return
+      }
+
+      // Two-finger swipe / mouse wheel → pan (Figma default)
       onCamera({
-        zoom: nextZoom,
-        x: mx - worldX * nextZoom,
-        y: my - worldY * nextZoom,
+        x: cam.x - e.deltaX,
+        y: cam.y - e.deltaY,
       })
     }
 
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [mode, camera, onCamera])
+  }, [mode, onCamera])
 
-  // space / middle-button pan
+  // space / middle-button / empty-canvas drag pan + touch pinch
   useEffect(() => {
     const el = hostRef.current
     if (!el || !WORLD_CAMERA_MODES.has(mode)) return
+
+    const pointers = new Map()
+    let pinch = null
 
     const onKeyDown = (e) => {
       if (e.code === 'Space' && !e.repeat) {
@@ -147,20 +167,71 @@ export function LayoutSurface({
         el.classList.remove('can-pan', 'is-panning')
       }
     }
+
+    const startPan = (e) => {
+      const cam = cameraRef.current
+      panRef.current = {
+        px: e.clientX,
+        py: e.clientY,
+        cx: cam.x,
+        cy: cam.y,
+      }
+      el.classList.add('is-panning')
+      el.setPointerCapture?.(e.pointerId)
+    }
+
     const onDown = (e) => {
-      const space = spaceRef.current
-      if (e.button === 1 || (e.button === 0 && space)) {
-        e.preventDefault()
-        panRef.current = {
-          px: e.clientX,
-          py: e.clientY,
-          cx: camera.x,
-          cy: camera.y,
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+      // two-finger touch pinch setup
+      if (pointers.size === 2) {
+        const pts = [...pointers.values()]
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+        const midX = (pts[0].x + pts[1].x) / 2
+        const midY = (pts[0].y + pts[1].y) / 2
+        const cam = cameraRef.current
+        const bounds = el.getBoundingClientRect()
+        pinch = {
+          dist,
+          zoom: cam.zoom,
+          x: cam.x,
+          y: cam.y,
+          mx: midX - bounds.left,
+          my: midY - bounds.top,
         }
-        el.classList.add('is-panning')
+        panRef.current = null
+        return
+      }
+
+      const onEmpty = e.target === el || e.target.classList?.contains('layout-layer')
+      const space = spaceRef.current
+      if (e.button === 1 || (e.button === 0 && space) || (e.button === 0 && onEmpty && e.pointerType !== 'touch')) {
+        e.preventDefault()
+        startPan(e)
       }
     }
+
     const onMove = (e) => {
+      if (pointers.has(e.pointerId)) {
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      }
+
+      if (pinch && pointers.size >= 2) {
+        const pts = [...pointers.values()]
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+        if (pinch.dist > 0) {
+          const nextZoom = clamp(pinch.zoom * (dist / pinch.dist), 0.15, 4)
+          const worldX = (pinch.mx - pinch.x) / pinch.zoom
+          const worldY = (pinch.my - pinch.y) / pinch.zoom
+          onCamera({
+            zoom: nextZoom,
+            x: pinch.mx - worldX * nextZoom,
+            y: pinch.my - worldY * nextZoom,
+          })
+        }
+        return
+      }
+
       const p = panRef.current
       if (!p) return
       onCamera({
@@ -168,9 +239,14 @@ export function LayoutSurface({
         y: p.cy + (e.clientY - p.py),
       })
     }
-    const onUp = () => {
-      panRef.current = null
-      el.classList.remove('is-panning')
+
+    const onUp = (e) => {
+      pointers.delete(e.pointerId)
+      if (pointers.size < 2) pinch = null
+      if (pointers.size === 0) {
+        panRef.current = null
+        el.classList.remove('is-panning')
+      }
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -178,14 +254,16 @@ export function LayoutSurface({
     el.addEventListener('pointerdown', onDown)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       el.removeEventListener('pointerdown', onDown)
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
     }
-  }, [mode, camera, onCamera])
+  }, [mode, onCamera])
 
   const onDragStart = (e, win) => {
     if (!DIRECT_GEOMETRY_MODES.has(mode)) return
@@ -205,7 +283,7 @@ export function LayoutSurface({
 
     const onMove = (ev) => {
       const d = dragRef.current
-      if (!d) return
+      if (!d || d.kind === 'resize') return
       onPatchWindow(d.id, {
         x: d.x + (ev.clientX - d.ox) / d.zoom,
         y: d.y + (ev.clientY - d.oy) / d.zoom,
@@ -220,6 +298,40 @@ export function LayoutSurface({
     window.addEventListener('pointerup', onUp)
   }
 
+  const onResizeStart = (e, win) => {
+    if (!isWorld && mode !== 'floating') return
+    e.preventDefault()
+    e.stopPropagation()
+    onBringFront(win.id)
+    const zoom = isWorld ? camera.zoom : 1
+    dragRef.current = {
+      kind: 'resize',
+      id: win.id,
+      ox: e.clientX,
+      oy: e.clientY,
+      w: win.w,
+      h: win.h,
+      zoom,
+    }
+
+    const onMove = (ev) => {
+      const d = dragRef.current
+      if (!d || d.kind !== 'resize') return
+      const nw = Math.max(200, d.w + (ev.clientX - d.ox) / d.zoom)
+      const nh = Math.max(140, d.h + (ev.clientY - d.oy) / d.zoom)
+      onPatchWindow(d.id, { w: nw, h: nh })
+    }
+    const onUp = () => {
+      dragRef.current = null
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  const canResize = isWorld || mode === 'floating'
+
   const cam = layout.camera ?? camera
   const layerStyle = isWorld
     ? {
@@ -228,10 +340,16 @@ export function LayoutSurface({
       }
     : undefined
 
-  const worldGridStyle = isWorld
+  // Dot matrix that tracks camera (Figma-like)
+  const worldBgStyle = isWorld
     ? {
-        backgroundPosition: `${cam.x}px ${cam.y}px, ${cam.x}px ${cam.y}px, 0 0, 0 0`,
-        backgroundSize: `${64 * cam.zoom}px ${64 * cam.zoom}px, ${64 * cam.zoom}px ${64 * cam.zoom}px, auto, auto`,
+        backgroundImage: `
+          radial-gradient(circle, rgba(255,255,255,0.14) 1px, transparent 1px),
+          radial-gradient(1200px 600px at 50% -10%, rgba(34, 197, 94, 0.04), transparent 55%),
+          linear-gradient(180deg, #0c0c0e 0%, #0a0a0b 40%)
+        `,
+        backgroundSize: `${DOT * cam.zoom}px ${DOT * cam.zoom}px, auto, auto`,
+        backgroundPosition: `${cam.x}px ${cam.y}px, 0 0, 0 0`,
       }
     : undefined
 
@@ -239,7 +357,7 @@ export function LayoutSurface({
     <div
       ref={hostRef}
       className={`layout-host mode-${mode}${isWorld ? ' is-world' : ''}`}
-      style={worldGridStyle}
+      style={worldBgStyle}
     >
       {tabs && (
         <div className="tab-strip" role="tablist">
@@ -299,6 +417,7 @@ export function LayoutSurface({
             >
               <WindowFrame
                 win={win}
+                groups={groups}
                 focused={focusId === win.id}
                 onFocus={(id) => {
                   onFocus(id)
@@ -308,6 +427,13 @@ export function LayoutSurface({
                 onDragStart={onDragStart}
                 draggable={DIRECT_GEOMETRY_MODES.has(mode)}
               />
+              {canResize && show && (
+                <div
+                  className="win-resize"
+                  onPointerDown={(e) => onResizeStart(e, win)}
+                  aria-hidden="true"
+                />
+              )}
             </div>
           )
         })}
@@ -315,7 +441,7 @@ export function LayoutSurface({
 
       {isWorld && (
         <div className="canvas-hint" aria-hidden="true">
-          scroll zoom · space/middle pan · 0 reset
+          swipe pan · pinch zoom · space-drag · 0 reset
         </div>
       )}
     </div>

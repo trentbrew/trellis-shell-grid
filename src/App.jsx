@@ -10,14 +10,24 @@ export default function App() {
       <TopBar
         mode={wm.mode}
         windows={wm.windows}
+        spaces={wm.spaces}
+        activeSpaceId={wm.activeSpaceId}
+        groups={wm.groups}
         onMode={wm.setMode}
         onAdd={wm.addWindow}
-        onClear={wm.clearWindows}
+        onSetSpace={wm.setSpace}
+        onAddSpace={wm.addSpace}
+        onRenameSpace={wm.renameSpace}
+        onRemoveSpace={wm.removeSpace}
+        onAddGroup={wm.addGroup}
+        onPatchGroup={wm.patchGroup}
+        onRemoveGroup={wm.removeGroup}
       />
 
       <main className="grid-stage" aria-label="Window manager surface">
         <LayoutSurface
           windows={wm.windows}
+          groups={wm.groups}
           layout={wm.layout}
           mode={wm.mode}
           focusId={wm.focusId}
@@ -35,7 +45,7 @@ export default function App() {
         {wm.windows.length === 0 && (
           <div className="empty-state">
             <p>No windows</p>
-            <p className="empty-hint">⌘N or use the bar · 1–7 switch layouts</p>
+            <p className="empty-hint">+ or ⌘N · 1–7 switch layouts</p>
           </div>
         )}
       </main>
@@ -51,18 +61,13 @@ export default function App() {
           <kbd>Tab</kbd> focus
         </span>
         <span>
-          <kbd>j</kbd> <kbd>k</kbd> next/prev
-        </span>
-        <span>
           <kbd>⌘N</kbd> new
         </span>
         <span>
           <kbd>⌘W</kbd> close
         </span>
-        <span>
-          <kbd>⌘</kbd>+arrows nudge
-        </span>
         <span className="status-gap" />
+        <span className="status-mode">{wm.space.name}</span>
         <span className="status-mode">{wm.mode}</span>
       </footer>
     </div>

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import {
-  SEED_WINDOWS,
+  createGroup,
+  createSpace,
   createWindow,
+  DEFAULT_GROUPS,
   LAYOUT_MODES,
+  seedMainSpace,
 } from './model'
 import {
   computeLayout,
@@ -10,98 +13,219 @@ import {
   WORLD_CAMERA_MODES,
 } from './layouts'
 
-const INITIAL = {
-  windows: SEED_WINDOWS,
-  mode: 'grid',
-  focusId: SEED_WINDOWS[0]?.id ?? null,
-  camera: { x: 0, y: 0, zoom: 1 },
-  viewport: { w: 0, h: 0 },
-  morphGen: 0,
+function buildInitial() {
+  const main = seedMainSpace()
+  const scratch = createSpace({
+    id: 'space-2',
+    name: 'Scratch',
+    mode: 'freeform',
+    windows: [
+      createWindow({
+        kind: 'terminal',
+        title: 'scratch',
+        group: 'violet',
+        x: 120,
+        y: 100,
+      }),
+    ],
+  })
+  scratch.focusId = scratch.windows[0]?.id ?? null
+  return {
+    spaces: [main, scratch],
+    activeSpaceId: main.id,
+    groups: DEFAULT_GROUPS.map((g) => ({ ...g })),
+    viewport: { w: 0, h: 0 },
+    morphGen: 0,
+  }
+}
+
+function activeSpace(state) {
+  return state.spaces.find((s) => s.id === state.activeSpaceId) ?? state.spaces[0]
+}
+
+function patchActive(state, patch, bumpMorph = false) {
+  const id = state.activeSpaceId
+  return {
+    ...state,
+    morphGen: bumpMorph ? state.morphGen + 1 : state.morphGen,
+    spaces: state.spaces.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+  }
 }
 
 function reducer(state, action) {
+  const space = activeSpace(state)
+
   switch (action.type) {
     case 'viewport':
       return { ...state, viewport: action.viewport }
+
     case 'mode': {
-      if (state.mode === action.mode) return state
-      return {
-        ...state,
-        mode: action.mode,
-        morphGen: state.morphGen + 1,
-      }
+      if (space.mode === action.mode) return state
+      return patchActive(state, { mode: action.mode }, true)
     }
+
     case 'cycle-mode': {
-      const idx = LAYOUT_MODES.findIndex((m) => m.id === state.mode)
-      const next = LAYOUT_MODES[(idx + (action.dir ?? 1) + LAYOUT_MODES.length) % LAYOUT_MODES.length]
-      return { ...state, mode: next.id, morphGen: state.morphGen + 1 }
+      const idx = LAYOUT_MODES.findIndex((m) => m.id === space.mode)
+      const next =
+        LAYOUT_MODES[
+          (idx + (action.dir ?? 1) + LAYOUT_MODES.length) % LAYOUT_MODES.length
+        ]
+      return patchActive(state, { mode: next.id }, true)
     }
+
     case 'focus':
-      return { ...state, focusId: action.id }
+      return patchActive(state, { focusId: action.id })
+
     case 'focus-delta': {
-      const list = state.windows.filter((w) => !w.minimized)
+      const list = space.windows.filter((w) => !w.minimized)
       if (!list.length) return state
-      const i = Math.max(0, list.findIndex((w) => w.id === state.focusId))
+      const i = Math.max(0, list.findIndex((w) => w.id === space.focusId))
       const next = list[(i + action.delta + list.length) % list.length]
-      return { ...state, focusId: next.id, morphGen: state.morphGen + 1 }
+      return patchActive(state, { focusId: next.id }, true)
     }
+
     case 'add': {
       const win = createWindow(action.partial)
+      return patchActive(
+        state,
+        {
+          windows: [...space.windows, win],
+          focusId: win.id,
+        },
+        true,
+      )
+    }
+
+    case 'remove': {
+      const windows = space.windows.filter((w) => w.id !== action.id)
+      const focusId =
+        space.focusId === action.id
+          ? windows[windows.length - 1]?.id ?? null
+          : space.focusId
+      return patchActive(state, { windows, focusId }, true)
+    }
+
+    case 'patch-window': {
+      const windows = space.windows.map((w) =>
+        w.id === action.id ? { ...w, ...action.patch } : w,
+      )
+      return patchActive(state, { windows })
+    }
+
+    case 'bring-front': {
+      const maxZ = space.windows.reduce((m, w) => Math.max(m, w.z), 0)
+      return patchActive(state, {
+        focusId: action.id,
+        windows: space.windows.map((w) =>
+          w.id === action.id ? { ...w, z: maxZ + 1 } : w,
+        ),
+      })
+    }
+
+    case 'camera':
+      return patchActive(state, {
+        camera: { ...space.camera, ...action.camera },
+      })
+
+    case 'camera-reset':
+      return patchActive(state, { camera: { x: 0, y: 0, zoom: 1 } }, true)
+
+    case 'set-space': {
+      if (action.id === state.activeSpaceId) return state
+      if (!state.spaces.some((s) => s.id === action.id)) return state
       return {
         ...state,
-        windows: [...state.windows, win],
-        focusId: win.id,
+        activeSpaceId: action.id,
         morphGen: state.morphGen + 1,
       }
     }
-    case 'remove': {
-      const windows = state.windows.filter((w) => w.id !== action.id)
-      const focusId =
-        state.focusId === action.id
-          ? windows[windows.length - 1]?.id ?? null
-          : state.focusId
-      return { ...state, windows, focusId, morphGen: state.morphGen + 1 }
-    }
-    case 'clear':
-      return { ...state, windows: [], focusId: null, morphGen: state.morphGen + 1 }
-    case 'patch-window': {
-      const windows = state.windows.map((w) =>
-        w.id === action.id ? { ...w, ...action.patch } : w,
-      )
-      return { ...state, windows }
-    }
-    case 'bring-front': {
-      const maxZ = state.windows.reduce((m, w) => Math.max(m, w.z), 0)
+
+    case 'add-space': {
+      const sp = createSpace(action.partial)
       return {
         ...state,
-        focusId: action.id,
-        windows: state.windows.map((w) =>
-          w.id === action.id ? { ...w, z: maxZ + 1 } : w,
+        spaces: [...state.spaces, sp],
+        activeSpaceId: sp.id,
+        morphGen: state.morphGen + 1,
+      }
+    }
+
+    case 'rename-space': {
+      return {
+        ...state,
+        spaces: state.spaces.map((s) =>
+          s.id === action.id ? { ...s, name: action.name } : s,
         ),
       }
     }
-    case 'camera':
-      return { ...state, camera: { ...state.camera, ...action.camera } }
-    case 'camera-reset':
-      return { ...state, camera: { x: 0, y: 0, zoom: 1 }, morphGen: state.morphGen + 1 }
+
+    case 'remove-space': {
+      if (state.spaces.length <= 1) return state
+      const spaces = state.spaces.filter((s) => s.id !== action.id)
+      const activeSpaceId =
+        state.activeSpaceId === action.id
+          ? spaces[0].id
+          : state.activeSpaceId
+      return {
+        ...state,
+        spaces,
+        activeSpaceId,
+        morphGen: state.morphGen + 1,
+      }
+    }
+
+    case 'add-group': {
+      const g = createGroup(action.partial)
+      return { ...state, groups: [...state.groups, g] }
+    }
+
+    case 'patch-group': {
+      return {
+        ...state,
+        groups: state.groups.map((g) =>
+          g.id === action.id ? { ...g, ...action.patch } : g,
+        ),
+      }
+    }
+
+    case 'remove-group': {
+      const groups = state.groups.filter((g) => g.id !== action.id)
+      const spaces = state.spaces.map((s) => ({
+        ...s,
+        windows: s.windows.map((w) =>
+          w.groupId === action.id ? { ...w, groupId: null } : w,
+        ),
+      }))
+      return { ...state, groups, spaces }
+    }
+
+    case 'assign-group': {
+      const windows = space.windows.map((w) =>
+        w.id === action.windowId ? { ...w, groupId: action.groupId } : w,
+      )
+      return patchActive(state, { windows })
+    }
+
     default:
       return state
   }
 }
 
 export function useWM() {
-  const [state, dispatch] = useReducer(reducer, INITIAL)
+  const [state, dispatch] = useReducer(reducer, undefined, buildInitial)
   const stateRef = useRef(state)
   stateRef.current = state
 
+  const space = activeSpace(state)
+
   const layout = useMemo(() => {
-    return computeLayout(state.mode, {
-      windows: state.windows,
+    return computeLayout(space.mode, {
+      windows: space.windows,
       viewport: state.viewport,
-      focusId: state.focusId,
-      camera: state.camera,
+      focusId: space.focusId,
+      camera: space.camera,
     })
-  }, [state.mode, state.windows, state.viewport, state.focusId, state.camera])
+  }, [space.mode, space.windows, space.focusId, space.camera, state.viewport])
 
   const setViewport = useCallback((viewport) => {
     dispatch({ type: 'viewport', viewport })
@@ -131,10 +255,6 @@ export function useWM() {
     dispatch({ type: 'remove', id })
   }, [])
 
-  const clearWindows = useCallback(() => {
-    dispatch({ type: 'clear' })
-  }, [])
-
   const patchWindow = useCallback((id, patch) => {
     dispatch({ type: 'patch-window', id, patch })
   }, [])
@@ -151,14 +271,47 @@ export function useWM() {
     dispatch({ type: 'camera-reset' })
   }, [])
 
+  const setSpace = useCallback((id) => {
+    dispatch({ type: 'set-space', id })
+  }, [])
+
+  const addSpace = useCallback((partial) => {
+    dispatch({ type: 'add-space', partial })
+  }, [])
+
+  const renameSpace = useCallback((id, name) => {
+    dispatch({ type: 'rename-space', id, name })
+  }, [])
+
+  const removeSpace = useCallback((id) => {
+    dispatch({ type: 'remove-space', id })
+  }, [])
+
+  const addGroup = useCallback((partial) => {
+    dispatch({ type: 'add-group', partial })
+  }, [])
+
+  const patchGroup = useCallback((id, patch) => {
+    dispatch({ type: 'patch-group', id, patch })
+  }, [])
+
+  const removeGroup = useCallback((id) => {
+    dispatch({ type: 'remove-group', id })
+  }, [])
+
+  const assignGroup = useCallback((windowId, groupId) => {
+    dispatch({ type: 'assign-group', windowId, groupId })
+  }, [])
+
   const moveFocused = useCallback(
     (dx, dy) => {
       const s = stateRef.current
-      if (!s.focusId || !DIRECT_GEOMETRY_MODES.has(s.mode)) return
-      const win = s.windows.find((w) => w.id === s.focusId)
+      const sp = activeSpace(s)
+      if (!sp.focusId || !DIRECT_GEOMETRY_MODES.has(sp.mode)) return
+      const win = sp.windows.find((w) => w.id === sp.focusId)
       if (!win) return
-      const step = s.mode === 'freeform' ? 24 / (s.camera.zoom || 1) : 24
-      patchWindow(s.focusId, {
+      const step = sp.mode === 'freeform' ? 24 / (sp.camera.zoom || 1) : 24
+      patchWindow(sp.focusId, {
         x: win.x + dx * step,
         y: win.y + dy * step,
       })
@@ -166,7 +319,6 @@ export function useWM() {
     [patchWindow],
   )
 
-  // keyboard
   useEffect(() => {
     const onKey = (e) => {
       const t = e.target
@@ -174,6 +326,7 @@ export function useWM() {
         t &&
         (t.tagName === 'INPUT' ||
           t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
           t.isContentEditable)
       ) {
         return
@@ -182,7 +335,6 @@ export function useWM() {
       const meta = e.metaKey || e.ctrlKey
       const key = e.key
 
-      // mode keys 1-7
       const modeHit = LAYOUT_MODES.find((m) => m.key === key)
       if (modeHit && !meta && !e.altKey) {
         e.preventDefault()
@@ -215,13 +367,8 @@ export function useWM() {
 
       if ((key === 'w' || key === 'W') && meta) {
         e.preventDefault()
-        const id = stateRef.current.focusId
+        const id = activeSpace(stateRef.current).focusId
         if (id) removeWindow(id)
-        return
-      }
-
-      if (key === 'Escape') {
-        // no-op reserved
         return
       }
 
@@ -239,7 +386,6 @@ export function useWM() {
           moveFocused(dx, dy)
           return
         }
-        // plain arrows: focus neighbors in strip/stack modes
         if (key === 'ArrowLeft' || key === 'ArrowUp') {
           e.preventDefault()
           focusDelta(-1)
@@ -272,10 +418,19 @@ export function useWM() {
   ])
 
   return {
-    ...state,
+    spaces: state.spaces,
+    activeSpaceId: state.activeSpaceId,
+    groups: state.groups,
+    space,
+    windows: space.windows,
+    mode: space.mode,
+    focusId: space.focusId,
+    camera: space.camera,
+    viewport: state.viewport,
+    morphGen: state.morphGen,
     layout,
-    isWorld: WORLD_CAMERA_MODES.has(state.mode),
-    isDirectGeo: DIRECT_GEOMETRY_MODES.has(state.mode),
+    isWorld: WORLD_CAMERA_MODES.has(space.mode),
+    isDirectGeo: DIRECT_GEOMETRY_MODES.has(space.mode),
     setViewport,
     setMode,
     cycleMode,
@@ -283,10 +438,17 @@ export function useWM() {
     focusDelta,
     addWindow,
     removeWindow,
-    clearWindows,
     patchWindow,
     bringFront,
     setCamera,
     resetCamera,
+    setSpace,
+    addSpace,
+    renameSpace,
+    removeSpace,
+    addGroup,
+    patchGroup,
+    removeGroup,
+    assignGroup,
   }
 }
