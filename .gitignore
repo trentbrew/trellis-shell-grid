@@ -26,3 +26,8 @@ node_modules
 .trellis
 .playwright
 .playwright-mcp
+
+# Tauri
+src-tauri/target
+src-tauri/gen/schemas
+.vercel

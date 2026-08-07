@@ -13,9 +13,11 @@ export async function resolveAdapter() {
 /**
  * Build a snapshot from WM state (view-state fields excluded).
  */
+export const SNAPSHOT_VERSION = 2
+
 export function toSnapshot(state) {
   return {
-    version: 1,
+    version: SNAPSHOT_VERSION,
     spaces: state.spaces,
     activeSpaceId: state.activeSpaceId,
     groups: state.groups,
@@ -29,7 +31,6 @@ export async function loadPersistedState() {
   const adapter = await resolveAdapter()
   const raw = await adapter.load()
   if (!raw) return null
-  if (raw.version !== 1) return null
   return raw
 }
 

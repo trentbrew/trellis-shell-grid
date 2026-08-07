@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { Maximize2, Minus, Minimize2, X } from 'lucide-react'
 import { EntityIcon } from '../icons/EntityIcon'
 import { ContentPane } from './content/ContentPane'
 import { STATUSES, WINDOW_KINDS, groupById } from './model'
@@ -7,10 +7,18 @@ export function WindowFrame({
   win,
   groups,
   focused,
+  expanded,
   onFocus,
   onClose,
+  onMinimize,
   onDragStart,
+  onZoom,
+  onPatchWindow,
   draggable,
+  tabs,
+  onTabClick,
+  index,
+  dims,
 }) {
   const meta = WINDOW_KINDS[win.kind] ?? WINDOW_KINDS.blank
   const group = groupById(groups, win.groupId)
@@ -28,7 +36,20 @@ export function WindowFrame({
         }
       }}
     >
-      <div className={`win-chrome${draggable ? ' is-draggable' : ''}`}>
+      {hasGroup && (
+        <div
+          className="win-group-bar"
+          title={group.label}
+          aria-label={`Group ${group.label}`}
+        />
+      )}
+      <div
+        className={`win-chrome${draggable ? ' is-draggable' : ''}`}
+        onDoubleClick={(e) => {
+          if (e.target.closest('button')) return
+          onZoom?.(win.id)
+        }}
+      >
         <div className="win-chrome-left">
           <span
             className={`win-status${status.pulse ? ' is-pulse' : ''}`}
@@ -48,32 +69,80 @@ export function WindowFrame({
           />
           <span className="win-title">{win.title}</span>
         </div>
-        <button
-          type="button"
-          className="win-close"
-          onClick={(e) => {
-            e.stopPropagation()
-            onClose?.(win.id)
-          }}
-          aria-label={`Close ${win.title}`}
-        >
-          <X size={12} strokeWidth={2} />
-        </button>
+        {tabs?.length ? (
+          <div className="tabbed-titlebar" role="tablist" aria-label="Window tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={tab.active}
+                className={`tabbed-titlebar-item${tab.active ? ' is-active' : ''}`}
+                onClick={() => onTabClick?.(tab.id)}
+              >
+                <EntityIcon
+                  name={tab.icon ?? 'square'}
+                  size={12}
+                  style={{ opacity: 0.84 }}
+                />
+                <span>{tab.title}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="win-actions">
+          <button
+            type="button"
+            className="win-btn win-minimize"
+            onClick={(e) => {
+              e.stopPropagation()
+              onMinimize?.(win.id)
+            }}
+            aria-label={`Minimize ${win.title}`}
+          >
+            <Minus size={12} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className={`win-btn win-expand${expanded ? ' is-expanded' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onZoom?.(win.id)
+            }}
+            aria-label={expanded ? `Restore ${win.title}` : `Expand ${win.title}`}
+            title={expanded ? 'Restore' : 'Expand'}
+          >
+            {expanded ? (
+              <Minimize2 size={12} strokeWidth={2} />
+            ) : (
+              <Maximize2 size={12} strokeWidth={2} />
+            )}
+          </button>
+          <button
+            type="button"
+            className="win-btn win-close"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose?.(win.id)
+            }}
+            aria-label={`Close ${win.title}`}
+          >
+            <X size={12} strokeWidth={2} />
+          </button>
+        </div>
       </div>
 
       <div className="win-body">
         <div className="win-content">
-          <ContentPane win={win} />
+          <ContentPane win={win} windowId={win.id} onPatchWindow={onPatchWindow} />
         </div>
+        {index != null && dims && (
+          <div className="win-debug" aria-hidden="true">
+            <span className="win-debug-idx">{index}</span>
+            <span className="win-debug-dims">{Math.round(dims.w)}×{Math.round(dims.h)}</span>
+          </div>
+        )}
       </div>
-
-      {hasGroup && (
-        <div
-          className="win-group-bar"
-          title={group.label}
-          aria-label={`Group ${group.label}`}
-        />
-      )}
     </div>
   )
 }

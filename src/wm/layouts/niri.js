@@ -27,12 +27,12 @@ export function layoutNiri({
   const originX = viewport.w / 2 - colW / 2 - focusIdx * (colW + gap)
 
   list.forEach((win, i) => {
-    const x = originX + i * (colW + gap)
+    const x = Math.round(originX + i * (colW + gap))
     const dist = Math.abs(i - focusIdx)
     rects[win.id] = rect(x, padY, colW, colH, {
       visible: true,
-      opacity: dist === 0 ? 1 : Math.max(0.35, 1 - dist * 0.22),
-      scale: dist === 0 ? 1 : Math.max(0.92, 1 - dist * 0.03),
+      opacity: dist === 0 ? 1 : 0.5,
+      scale: 1,
       z: 100 - dist,
     })
   })

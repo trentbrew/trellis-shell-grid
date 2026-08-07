@@ -1,9 +1,12 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { WindowFrame } from './WindowFrame'
-import { WORLD_CAMERA_MODES, DIRECT_GEOMETRY_MODES } from './layouts'
+import { WORLD_CAMERA_MODES, DIRECT_GEOMETRY_MODES, RESIZABLE_MODES } from './layouts'
+import { WINDOW_KINDS } from './model'
+import { Minimap } from './Minimap'
 
-const MORPH_MS = 400
-const MORPH_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+const MORPH_MS = 520
+const MORPH_EASE = 'cubic-bezier(0.16, 0.8, 0.24, 1)'
+const GHOST_MS = 300
 const DOT = 24
 
 /**
@@ -19,20 +22,27 @@ export function LayoutSurface({
   camera,
   morphGen,
   isWorld,
+  prevMode,
   onViewport,
   onFocus,
   onClose,
+  onMinimize,
   onBringFront,
   onPatchWindow,
   onCamera,
+  onZoom,
 }) {
   const hostRef = useRef(null)
   const nodeMap = useRef(new Map())
   const prevRects = useRef({})
+  const prevMinIds = useRef(new Set())
   const dragRef = useRef(null)
   const spaceRef = useRef(false)
   const panRef = useRef(null)
   const cameraRef = useRef(camera)
+  const [ghosts, setGhosts] = useState([])
+  const [restoringIds, setRestoringIds] = useState(() => new Set())
+  const [isResizing, setIsResizing] = useState(false)
   cameraRef.current = camera
 
   useEffect(() => {
@@ -48,13 +58,46 @@ export function LayoutSurface({
   }, [onViewport])
 
   const rects = layout.rects ?? {}
-  const tabs = layout.tabs
+  const tabs = layout.tabs?.map((t) => {
+    const win = windows.find((w) => w.id === t.id)
+    const meta = WINDOW_KINDS[win?.kind] ?? WINDOW_KINDS.blank
+    return {
+      ...t,
+      title: win?.title ?? t.id,
+      icon: meta.icon,
+      kind: win?.kind,
+    }
+  })
 
-  // FLIP on layout mode morph
+  // FLIP on layout mode morph + minimize/restore transitions
   useLayoutEffect(() => {
     const next = rects
     const prev = prevRects.current
     const timers = []
+
+    // Detect newly minimized → spawn shrink-away ghost; newly restored → grow-in
+    const minNow = new Set(windows.filter((w) => w.minimized).map((w) => w.id))
+    const minPrev = prevMinIds.current
+    for (const id of minNow) {
+      if (!minPrev.has(id) && prev[id]) {
+        spawnGhost(id, prev[id])
+      }
+    }
+    for (const id of minPrev) {
+      if (!minNow.has(id)) {
+        setRestoringIds((s) => new Set(s).add(id))
+        timers.push(
+          window.setTimeout(() => {
+            setRestoringIds((s) => {
+              const n = new Set(s)
+              n.delete(id)
+              return n
+            })
+          }, GHOST_MS + 60),
+        )
+      }
+    }
+    prevMinIds.current = minNow
 
     for (const [id, node] of nodeMap.current) {
       const a = prev[id]
@@ -100,6 +143,23 @@ export function LayoutSurface({
     return () => timers.forEach((t) => clearTimeout(t))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [morphGen])
+
+  const spawnGhost = (id, a) => {
+    const host = hostRef.current
+    const gw = 96
+    const gh = 22
+    const dockX = 10
+    const dockY = (host?.clientHeight ?? 600) - gh - 6
+    const ghost = {
+      id: `${id}-${Date.now()}`,
+      from: a,
+      to: { x: dockX, y: dockY, w: gw, h: gh },
+    }
+    setGhosts((gs) => [...gs, ghost])
+    window.setTimeout(() => {
+      setGhosts((gs) => gs.filter((g) => g.id !== ghost.id))
+    }, GHOST_MS + 60)
+  }
 
   useEffect(() => {
     prevRects.current = snapshotRects(layout.rects ?? {})
@@ -284,10 +344,9 @@ export function LayoutSurface({
     const onMove = (ev) => {
       const d = dragRef.current
       if (!d || d.kind === 'resize') return
-      onPatchWindow(d.id, {
-        x: d.x + (ev.clientX - d.ox) / d.zoom,
-        y: d.y + (ev.clientY - d.oy) / d.zoom,
-      })
+      const dx = d.x + (ev.clientX - d.ox) / d.zoom
+      const dy = d.y + (ev.clientY - d.oy) / d.zoom
+      onPatchWindow(d.id, { x: dx, y: dy })
     }
     const onUp = () => {
       dragRef.current = null
@@ -299,11 +358,12 @@ export function LayoutSurface({
   }
 
   const onResizeStart = (e, win) => {
-    if (!isWorld && mode !== 'floating') return
+    if (!RESIZABLE_MODES.has(mode)) return
     e.preventDefault()
     e.stopPropagation()
     onBringFront(win.id)
-    const zoom = isWorld ? camera.zoom : 1
+    setIsResizing(true)
+
     dragRef.current = {
       kind: 'resize',
       id: win.id,
@@ -311,18 +371,18 @@ export function LayoutSurface({
       oy: e.clientY,
       w: win.w,
       h: win.h,
-      zoom,
     }
 
     const onMove = (ev) => {
       const d = dragRef.current
       if (!d || d.kind !== 'resize') return
-      const nw = Math.max(200, d.w + (ev.clientX - d.ox) / d.zoom)
-      const nh = Math.max(140, d.h + (ev.clientY - d.oy) / d.zoom)
+      const nw = Math.max(200, d.w + (ev.clientX - d.ox))
+      const nh = Math.max(140, d.h + (ev.clientY - d.oy))
       onPatchWindow(d.id, { w: nw, h: nh })
     }
     const onUp = () => {
       dragRef.current = null
+      setIsResizing(false)
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
@@ -330,7 +390,7 @@ export function LayoutSurface({
     window.addEventListener('pointerup', onUp)
   }
 
-  const canResize = isWorld || mode === 'floating'
+  const canResize = RESIZABLE_MODES.has(mode)
 
   const cam = layout.camera ?? camera
   const layerStyle = isWorld
@@ -356,35 +416,9 @@ export function LayoutSurface({
   return (
     <div
       ref={hostRef}
-      className={`layout-host mode-${mode}${isWorld ? ' is-world' : ''}`}
+      className={`layout-host mode-${mode}${isWorld ? ' is-world' : ''}${isResizing ? ' is-resizing' : ''}`}
       style={worldBgStyle}
     >
-      {tabs && (
-        <div className="tab-strip" role="tablist">
-          {tabs.map((t) => {
-            const win = windows.find((w) => w.id === t.id)
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={t.active}
-                className={`tab-chip${t.active ? ' is-active' : ''}`}
-                style={{
-                  left: t.x,
-                  top: t.y,
-                  width: t.w,
-                  height: t.h,
-                }}
-                onClick={() => onFocus(t.id)}
-              >
-                {win?.title ?? t.id}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
       <div className="layout-layer" style={layerStyle}>
         {windows.map((win) => {
           const r = rects[win.id]
@@ -394,6 +428,18 @@ export function LayoutSurface({
           const scale = r.scale ?? 1
           const z = r.z ?? win.z ?? 1
           const show = visible && opacity > 0.02
+          const restoring = restoringIds.has(win.id)
+          const restoreStyle = restoring
+            ? (() => {
+                const host = hostRef.current
+                const dockX = 10
+                const dockY = (host?.clientHeight ?? 600) - 28
+                return {
+                  '--restore-dx': `${dockX - r.x}px`,
+                  '--restore-dy': `${dockY - (r.y + r.h)}px`,
+                }
+              })()
+            : undefined
 
           return (
             <div
@@ -402,7 +448,7 @@ export function LayoutSurface({
                 if (node) nodeMap.current.set(win.id, node)
                 else nodeMap.current.delete(win.id)
               }}
-              className={`win-slot${focusId === win.id ? ' is-focused' : ''}${show ? '' : ' is-hidden'}`}
+              className={`win-slot${focusId === win.id ? ' is-focused' : ''}${show ? '' : ' is-hidden'}${restoring ? ' is-restoring' : ''}`}
               style={{
                 left: r.x,
                 top: r.y,
@@ -411,21 +457,30 @@ export function LayoutSurface({
                 zIndex: focusId === win.id ? 1000 + z : z,
                 opacity: show ? opacity : 0,
                 transform: scale !== 1 ? `scale(${scale})` : undefined,
-                transformOrigin: 'top left',
+                transformOrigin: restoring ? 'bottom left' : 'top left',
                 pointerEvents: show ? 'auto' : 'none',
+                ...restoreStyle,
               }}
             >
               <WindowFrame
                 win={win}
                 groups={groups}
                 focused={focusId === win.id}
+                expanded={mode === 'niri' && focusId === win.id && Boolean(prevMode)}
+                tabs={mode === 'niri' && focusId === win.id ? tabs : undefined}
+                onTabClick={onFocus}
                 onFocus={(id) => {
                   onFocus(id)
                   onBringFront(id)
                 }}
                 onClose={onClose}
+                onMinimize={onMinimize}
                 onDragStart={onDragStart}
+                onZoom={onZoom}
+                onPatchWindow={onPatchWindow}
                 draggable={DIRECT_GEOMETRY_MODES.has(mode)}
+                index={windows.indexOf(win)}
+                dims={r}
               />
               {canResize && show && (
                 <div
@@ -437,12 +492,36 @@ export function LayoutSurface({
             </div>
           )
         })}
+        {ghosts.map((g) => (
+          <div
+            key={g.id}
+            className="win-ghost"
+            style={{
+              left: g.from.x,
+              top: g.from.y,
+              width: g.from.w,
+              height: g.from.h,
+              '--ghost-dx': `${g.to.x - g.from.x}px`,
+              '--ghost-dy': `${g.to.y - g.from.y}px`,
+              '--ghost-sx': g.to.w / g.from.w,
+              '--ghost-sy': g.to.h / g.from.h,
+            }}
+          />
+        ))}
       </div>
 
       {isWorld && (
-        <div className="canvas-hint" aria-hidden="true">
-          swipe pan · pinch zoom · space-drag · 0 reset
-        </div>
+        <>
+          <Minimap
+            windows={windows}
+            camera={camera}
+            viewport={viewport}
+            onCamera={onCamera}
+          />
+          <div className="canvas-hint" aria-hidden="true">
+            swipe pan · pinch zoom · space-drag · 0 reset
+          </div>
+        </>
       )}
     </div>
   )

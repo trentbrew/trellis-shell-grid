@@ -1,25 +1,34 @@
 import { rect } from '../model'
 
-/** Uniform auto-grid — fills viewport, equal cells. */
-export function layoutGrid({ windows, viewport, gap = 12, pad = 12 }) {
+const GAP = 12
+const PAD = 12
+
+/**
+ * Simple tiling grid: evenly divide viewport among all windows.
+ * Each window gets one equal cell. No spans, no drag, no resize.
+ */
+export function layoutGrid({ windows, viewport }) {
   const list = windows.filter((w) => !w.minimized)
   const rects = {}
-  if (!list.length || viewport.w <= 0 || viewport.h <= 0) return { rects }
-
   const n = list.length
+  if (!n || viewport.w <= 0 || viewport.h <= 0) return { rects }
+
   const cols = Math.ceil(Math.sqrt(n))
   const rows = Math.ceil(n / cols)
-  const cellW = (viewport.w - pad * 2 - gap * (cols - 1)) / cols
-  const cellH = (viewport.h - pad * 2 - gap * (rows - 1)) / rows
+
+  const availW = viewport.w - PAD * 2 - GAP * (cols - 1)
+  const availH = viewport.h - PAD * 2 - GAP * (rows - 1)
+  const cellW = availW / cols
+  const cellH = availH / rows
 
   list.forEach((win, i) => {
-    const c = i % cols
-    const r = Math.floor(i / cols)
+    const col = i % cols
+    const row = Math.floor(i / cols)
     rects[win.id] = rect(
-      pad + c * (cellW + gap),
-      pad + r * (cellH + gap),
-      Math.max(80, cellW),
-      Math.max(60, cellH),
+      PAD + col * (cellW + GAP),
+      PAD + row * (cellH + GAP),
+      cellW,
+      cellH,
       { visible: true },
     )
   })

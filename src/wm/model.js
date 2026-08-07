@@ -53,14 +53,16 @@ export const STATUSES = {
 }
 
 export const LAYOUT_MODES = [
-  { id: 'grid', label: 'Grid', key: '1', hint: 'Uniform cells' },
-  { id: 'freeform', label: 'Canvas', key: '2', hint: 'Zoomable freeform' },
-  { id: 'niri', label: 'Niri', key: '3', hint: 'Horizontal strip' },
-  { id: 'floating', label: 'Windows', key: '4', hint: 'Traditional float' },
-  { id: 'fibonacci', label: 'Fibonacci', key: '5', hint: 'Spiral tile' },
-  { id: 'tabs', label: 'Tabs', key: '6', hint: 'One at a time' },
-  { id: 'stack', label: 'Stack', key: '7', hint: 'Offset deck' },
+  { id: 'tabs', label: 'Tabs', hint: 'One at a time' },
+  { id: 'stack', label: 'Stack', hint: 'Offset deck' },
+  { id: 'table', label: 'Table', hint: 'Grid table' },
+  { id: 'niri', label: 'Niri', hint: 'Horizontal strip' },
+  { id: 'grid', label: 'Grid', hint: 'Uniform cells' },
+  { id: 'fibonacci', label: 'Fibonacci', hint: 'Spiral tile' },
+  { id: 'freeform', label: 'Canvas', hint: 'Zoomable freeform' },
 ]
+
+export const ACTIVE_MODES = LAYOUT_MODES.filter((m) => !m.deprecated)
 
 export const GROUP_COLORS = [
   '#22c55e',
@@ -110,6 +112,7 @@ export function createWindow(partial = {}) {
     z: partial.z ?? n,
     status: partial.status ?? meta.defaultStatus ?? 'idle',
     minimized: false,
+    content: '',
     ...partial,
     kind,
     groupId: partial.groupId ?? partial.group ?? null,
@@ -126,6 +129,7 @@ export function createSpace(partial = {}) {
     windows: partial.windows ?? [],
     focusId: partial.focusId ?? null,
     camera: partial.camera ?? { x: 0, y: 0, zoom: 1 },
+    gridSizes: partial.gridSizes ?? {},
   }
 }
 

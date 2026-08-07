@@ -1,20 +1,14 @@
 import { EntityIcon } from '../../icons/EntityIcon'
+import { TerminalPane } from '../../terminal/TerminalPane'
 import { WINDOW_KINDS } from '../model'
+import { RichTextPane } from './RichTextPane'
 
-/** Placeholder content per kind — real terminals/etc. come later. */
-export function ContentPane({ win }) {
+/** Pluggable content per kind. Terminal uses a real PTY inside Tauri. */
+export function ContentPane({ win, windowId, onPatchWindow }) {
   const meta = WINDOW_KINDS[win.kind] ?? WINDOW_KINDS.blank
 
   if (win.kind === 'terminal') {
-    return (
-      <pre className="content-term">
-        <span className="term-prompt">$</span> trellis whereami
-        {'\n'}
-        <span className="term-dim">lane · space · focus ready</span>
-        {'\n'}
-        <span className="term-prompt">$</span> <span className="term-cursor">▍</span>
-      </pre>
-    )
+    return <TerminalPane windowId={windowId} win={win} />
   }
 
   if (win.kind === 'service') {
@@ -40,10 +34,10 @@ export function ContentPane({ win }) {
 
   if (win.kind === 'note') {
     return (
-      <div className="content-note">
-        <p>Scratch notes for this space.</p>
-        <p className="content-dim">Markdown + Trellis links later.</p>
-      </div>
+      <RichTextPane
+        content={win.content}
+        onChange={(md) => onPatchWindow?.(windowId, { content: md })}
+      />
     )
   }
 

@@ -1,39 +1,47 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import * as Menu from '@radix-ui/react-menu'
 import {
   AppWindow,
   Check,
   ChevronDown,
+  Cog,
   Columns2,
+  Focus,
   Grip,
-  LayoutGrid,
   Layers,
-  PanelTop,
+  LayoutGrid,
   Plus,
-  Settings2,
+  Search,
+  Rows2,
+  SquareStack,
+  Table,
   Trash2,
   Waypoints,
 } from 'lucide-react'
 import turtleLogo from '../assets/turtle.svg'
 import { EntityIcon } from '../icons/EntityIcon'
 import { LucideIconPicker } from '../icons/LucideIconPicker'
-import { GROUP_COLORS, KIND_LIST, LAYOUT_MODES } from './model'
+import { WindowControls } from './WindowControls'
+import { controlsSide } from '../platform'
+import { GROUP_COLORS, KIND_LIST, ACTIVE_MODES } from './model'
 
 const MODE_ICONS = {
+  tabs: SquareStack,
+  stack: Rows2,
+  table: Table,
   grid: LayoutGrid,
   freeform: Grip,
   niri: Columns2,
   floating: AppWindow,
   fibonacci: Waypoints,
-  tabs: PanelTop,
-  stack: Layers,
 }
 
 export function TopBar({
   mode,
-  windows,
   spaces,
   activeSpaceId,
   groups,
+  zen,
   onMode,
   onAdd,
   onSetSpace,
@@ -43,6 +51,9 @@ export function TopBar({
   onAddGroup,
   onPatchGroup,
   onRemoveGroup,
+  onToggleZen,
+  onOpenPalette,
+  onOpenSettings,
 }) {
   const [addOpen, setAddOpen] = useState(false)
   const [spaceOpen, setSpaceOpen] = useState(false)
@@ -50,43 +61,8 @@ export function TopBar({
   const [renamingId, setRenamingId] = useState(null)
   const [renameVal, setRenameVal] = useState('')
   const [iconTarget, setIconTarget] = useState(null)
-  const addRef = useRef(null)
-  const spaceRef = useRef(null)
-  const groupsRef = useRef(null)
 
   const activeSpace = spaces.find((s) => s.id === activeSpaceId) ?? spaces[0]
-
-  useEffect(() => {
-    if (!addOpen && !spaceOpen && !groupsOpen) return
-    const onDoc = (e) => {
-      if (addOpen && addRef.current && !addRef.current.contains(e.target)) {
-        setAddOpen(false)
-      }
-      if (spaceOpen && spaceRef.current && !spaceRef.current.contains(e.target)) {
-        setSpaceOpen(false)
-        setRenamingId(null)
-      }
-      if (groupsOpen && groupsRef.current && !groupsRef.current.contains(e.target)) {
-        // don't close when icon picker modal is open
-        if (e.target.closest?.('.modal-backdrop')) return
-        setGroupsOpen(false)
-      }
-    }
-    const onKey = (e) => {
-      if (e.key === 'Escape' && !iconTarget) {
-        setAddOpen(false)
-        setSpaceOpen(false)
-        setGroupsOpen(false)
-        setRenamingId(null)
-      }
-    }
-    document.addEventListener('pointerdown', onDoc)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDoc)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [addOpen, spaceOpen, groupsOpen, iconTarget])
 
   const startRename = (sp) => {
     setRenamingId(sp.id)
@@ -100,39 +76,44 @@ export function TopBar({
     setRenamingId(null)
   }
 
+  const controlsSide_ = controlsSide()
+
   return (
-    <header className="topbar">
-      <div className="topbar-left">
+    <header className="topbar" data-tauri-drag-region>
+      <div className="topbar-left" data-tauri-drag-region>
+        {controlsSide_ === 'left' && <WindowControls />}
         <div className="brand" aria-hidden="true">
           <img src={turtleLogo} alt="" className="brand-logo" />
         </div>
 
-        <div className="space-combo" ref={spaceRef}>
-          <button
-            type="button"
-            className={`space-trigger${spaceOpen ? ' is-open' : ''}`}
-            onClick={() => setSpaceOpen((v) => !v)}
-            aria-haspopup="listbox"
-            aria-expanded={spaceOpen}
-            aria-label="Spaces"
-          >
-            <span className="space-name">{activeSpace?.name ?? 'Space'}</span>
-            <ChevronDown size={13} strokeWidth={2} className="space-chevron" />
-          </button>
-
-          {spaceOpen && (
-            <div className="menu space-menu" role="listbox">
+        <Menu.Root
+          open={spaceOpen}
+          onOpenChange={(open) => {
+            setSpaceOpen(open)
+            if (!open) setRenamingId(null)
+          }}
+          modal={false}
+        >
+          <Menu.Anchor asChild>
+            <button
+              type="button"
+              className={`space-trigger${spaceOpen ? ' is-open' : ''}`}
+              aria-label="Spaces"
+              aria-expanded={spaceOpen}
+              aria-haspopup="menu"
+              onClick={() => setSpaceOpen((o) => !o)}
+            >
+              <span className="space-name">{activeSpace?.name ?? 'Space'}</span>
+              <ChevronDown size={13} strokeWidth={2} className="space-chevron" />
+            </button>
+          </Menu.Anchor>
+          <Menu.Portal>
+            <Menu.Content className="menu space-menu" side="bottom" sideOffset={6} align="start">
               {spaces.map((sp) => {
                 const active = sp.id === activeSpaceId
-                const renaming = renamingId === sp.id
-                return (
-                  <div
-                    key={sp.id}
-                    className={`menu-row${active ? ' is-active' : ''}`}
-                    role="option"
-                    aria-selected={active}
-                  >
-                    {renaming ? (
+                if (renamingId === sp.id) {
+                  return (
+                    <div key={sp.id} className={`menu-row${active ? ' is-active' : ''}`}>
                       <input
                         className="space-rename"
                         value={renameVal}
@@ -146,93 +127,96 @@ export function TopBar({
                         }}
                         onClick={(e) => e.stopPropagation()}
                       />
-                    ) : (
-                      <button
-                        type="button"
-                        className="menu-item space-item"
-                        onClick={() => {
-                          onSetSpace(sp.id)
-                          setSpaceOpen(false)
-                        }}
-                        onDoubleClick={(e) => {
-                          e.preventDefault()
-                          startRename(sp)
-                        }}
-                      >
-                        <span>{sp.name}</span>
-                        <span className="menu-meta">{sp.windows.length}</span>
-                        {active && <Check size={12} strokeWidth={2} />}
-                      </button>
-                    )}
-                  </div>
+                    </div>
+                  )
+                }
+                return (
+                  <Menu.Item
+                    key={sp.id}
+                    className={`menu-item space-item${active ? ' is-active' : ''}`}
+                    onSelect={() => onSetSpace(sp.id)}
+                    onDoubleClick={(e) => {
+                      e.preventDefault()
+                      startRename(sp)
+                    }}
+                  >
+                    <span>{sp.name}</span>
+                    <span className="menu-meta">{sp.windows.length}</span>
+                    {active && <Check size={12} strokeWidth={2} />}
+                  </Menu.Item>
                 )
               })}
-              <div className="menu-sep" />
-              <button
-                type="button"
-                className="menu-item"
-                onClick={() => {
-                  onAddSpace({})
-                  setSpaceOpen(false)
-                }}
-              >
+              <Menu.Separator className="menu-sep" />
+              <Menu.Item className="menu-item" onSelect={() => onAddSpace({})}>
                 <Plus size={13} strokeWidth={2} />
                 <span>New space</span>
-              </button>
+              </Menu.Item>
               {spaces.length > 1 && (
-                <button
-                  type="button"
+                <Menu.Item
                   className="menu-item menu-danger"
-                  onClick={() => {
-                    onRemoveSpace(activeSpaceId)
-                    setSpaceOpen(false)
-                  }}
+                  onSelect={() => onRemoveSpace(activeSpaceId)}
                 >
                   <span>Delete “{activeSpace?.name}”</span>
-                </button>
+                </Menu.Item>
               )}
               <p className="menu-hint">Double-click to rename</p>
-            </div>
-          )}
-        </div>
+            </Menu.Content>
+          </Menu.Portal>
+        </Menu.Root>
 
-        <span className="topbar-meta">{windows.length}</span>
+        <div className="topbar-modes" role="toolbar" aria-label="Layout modes">
+          {ACTIVE_MODES.map((m, i) => {
+            const key = String(i + 1)
+            const Icon = MODE_ICONS[m.id] ?? LayoutGrid
+            const active = mode === m.id
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className={`mode-btn${active ? ' is-active' : ''}`}
+                onClick={() => onMode(m.id)}
+                title={`${m.label} (${key}) — ${m.hint}`}
+                aria-pressed={active}
+                aria-label={`${m.label} layout`}
+              >
+                <Icon size={15} strokeWidth={1.75} />
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      <div className="topbar-modes" role="toolbar" aria-label="Layout modes">
-        {LAYOUT_MODES.map((m) => {
-          const Icon = MODE_ICONS[m.id] ?? LayoutGrid
-          const active = mode === m.id
-          return (
-            <button
-              key={m.id}
-              type="button"
-              className={`mode-btn${active ? ' is-active' : ''}`}
-              onClick={() => onMode(m.id)}
-              title={`${m.label} (${m.key}) — ${m.hint}`}
-              aria-pressed={active}
-              aria-label={`${m.label} layout`}
-            >
-              <Icon size={15} strokeWidth={1.75} />
-            </button>
-          )
-        })}
+      <div className="topbar-center">
+        <button
+          type="button"
+          className="bar-btn search-btn"
+          onClick={onOpenPalette}
+          aria-label="Search and commands (⌥space)"
+          title="Search & commands (⌥space)"
+        >
+          <Search size={14} strokeWidth={1.75} />
+          <span className="search-hint">Search</span>
+          <kbd className="search-kbd">⌥space</kbd>
+        </button>
       </div>
 
       <div className="topbar-actions">
-        <div className="groups-combo" ref={groupsRef}>
-          <button
-            type="button"
-            className={`bar-btn icon-btn${groupsOpen ? ' is-open' : ''}`}
-            onClick={() => setGroupsOpen((v) => !v)}
-            aria-label="Manage groups"
-            title="Groups"
-          >
-            <Settings2 size={14} strokeWidth={1.75} />
-          </button>
-
-          {groupsOpen && (
-            <div className="menu groups-menu">
+        <Menu.Root open={groupsOpen} onOpenChange={setGroupsOpen} modal={false}>
+          <Menu.Anchor asChild>
+            <button
+              type="button"
+              className={`bar-btn icon-btn${groupsOpen ? ' is-open' : ''}`}
+              aria-label="Manage groups"
+              title="Groups"
+              aria-expanded={groupsOpen}
+              aria-haspopup="menu"
+              onClick={() => setGroupsOpen((o) => !o)}
+            >
+              <Layers size={14} strokeWidth={1.75} />
+            </button>
+          </Menu.Anchor>
+          <Menu.Portal>
+            <Menu.Content className="menu groups-menu" side="bottom" sideOffset={6} align="start">
               <div className="menu-section-label">Groups</div>
               {groups.map((g) => (
                 <div key={g.id} className="group-edit-row">
@@ -241,7 +225,10 @@ export function TopBar({
                     className="group-icon-btn"
                     style={{ color: g.color, borderColor: `${g.color}55` }}
                     title="Change icon"
-                    onClick={() => setIconTarget(g.id)}
+                    onClick={() => {
+                      setGroupsOpen(false)
+                      setIconTarget(g.id)
+                    }}
                   >
                     <EntityIcon name={g.icon} size={14} />
                   </button>
@@ -272,43 +259,56 @@ export function TopBar({
                   </button>
                 </div>
               ))}
-              <div className="menu-sep" />
-              <button
-                type="button"
-                className="menu-item"
-                onClick={() => onAddGroup({})}
-              >
+              <Menu.Separator className="menu-sep" />
+              <Menu.Item className="menu-item" onSelect={() => onAddGroup({})}>
                 <Plus size={13} />
                 <span>New group</span>
-              </button>
-            </div>
-          )}
-        </div>
+              </Menu.Item>
+            </Menu.Content>
+          </Menu.Portal>
+        </Menu.Root>
 
-        <div className="add-combo" ref={addRef}>
-          <button
-            type="button"
-            className={`bar-btn add-btn${addOpen ? ' is-open' : ''}`}
-            onClick={() => setAddOpen((v) => !v)}
-            aria-haspopup="menu"
-            aria-expanded={addOpen}
-            aria-label="Add window"
-            title="Add window (⌘N)"
-          >
-            <Plus size={15} strokeWidth={2} />
-          </button>
-          {addOpen && (
-            <div className="menu add-menu" role="menu">
+        <button
+          type="button"
+          className="bar-btn icon-btn"
+          onClick={onOpenSettings}
+          aria-label="Open settings"
+          title="Settings"
+        >
+          <Cog size={14} strokeWidth={1.75} />
+        </button>
+
+        <button
+          type="button"
+          className={`bar-btn zen-btn${zen ? ' is-active' : ''}`}
+          onClick={onToggleZen}
+          aria-label="Toggle zen mode (⌥Z)"
+          title="Zen mode (⌥Z)"
+        >
+          <Focus size={14} strokeWidth={1.75} />
+        </button>
+
+        <Menu.Root open={addOpen} onOpenChange={setAddOpen} modal={false}>
+          <Menu.Anchor asChild>
+            <button
+              type="button"
+              className={`bar-btn add-btn${addOpen ? ' is-open' : ''}`}
+              aria-label="Add window"
+              title="Add window (⌘/)"
+              aria-expanded={addOpen}
+              aria-haspopup="menu"
+              onClick={() => setAddOpen((o) => !o)}
+            >
+              <Plus size={15} strokeWidth={2} />
+            </button>
+          </Menu.Anchor>
+          <Menu.Portal>
+            <Menu.Content className="menu add-menu" side="bottom" sideOffset={6} align="end">
               {KIND_LIST.map((meta) => (
-                <button
+                <Menu.Item
                   key={meta.id}
-                  type="button"
                   className="menu-item"
-                  role="menuitem"
-                  onClick={() => {
-                    onAdd({ kind: meta.id })
-                    setAddOpen(false)
-                  }}
+                  onSelect={() => onAdd({ kind: meta.id })}
                 >
                   <EntityIcon
                     name={meta.icon}
@@ -316,11 +316,12 @@ export function TopBar({
                     style={{ color: meta.accent }}
                   />
                   <span>{meta.label}</span>
-                </button>
+                </Menu.Item>
               ))}
-            </div>
-          )}
-        </div>
+            </Menu.Content>
+          </Menu.Portal>
+        </Menu.Root>
+        {controlsSide_ === 'right' && <WindowControls />}
       </div>
 
       <LucideIconPicker
