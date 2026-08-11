@@ -205,6 +205,7 @@ export default function App() {
           mode={wm.mode}
           focusId={wm.focusId}
           camera={wm.camera}
+          viewport={wm.viewport}
           morphGen={wm.morphGen}
           isWorld={wm.isWorld}
           prevMode={wm.prevMode}

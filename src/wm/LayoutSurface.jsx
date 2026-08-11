@@ -20,6 +20,7 @@ export function LayoutSurface({
   mode,
   focusId,
   camera,
+  viewport,
   morphGen,
   isWorld,
   prevMode,
@@ -395,22 +396,22 @@ export function LayoutSurface({
   const cam = layout.camera ?? camera
   const layerStyle = isWorld
     ? {
-        transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`,
-        transformOrigin: '0 0',
-      }
+      transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`,
+      transformOrigin: '0 0',
+    }
     : undefined
 
   // Dot matrix that tracks camera (Figma-like)
   const worldBgStyle = isWorld
     ? {
-        backgroundImage: `
+      backgroundImage: `
           radial-gradient(circle, rgba(255,255,255,0.14) 1px, transparent 1px),
           radial-gradient(1200px 600px at 50% -10%, rgba(34, 197, 94, 0.04), transparent 55%),
           linear-gradient(180deg, #0c0c0e 0%, #0a0a0b 40%)
         `,
-        backgroundSize: `${DOT * cam.zoom}px ${DOT * cam.zoom}px, auto, auto`,
-        backgroundPosition: `${cam.x}px ${cam.y}px, 0 0, 0 0`,
-      }
+      backgroundSize: `${DOT * cam.zoom}px ${DOT * cam.zoom}px, auto, auto`,
+      backgroundPosition: `${cam.x}px ${cam.y}px, 0 0, 0 0`,
+    }
     : undefined
 
   return (
@@ -431,14 +432,14 @@ export function LayoutSurface({
           const restoring = restoringIds.has(win.id)
           const restoreStyle = restoring
             ? (() => {
-                const host = hostRef.current
-                const dockX = 10
-                const dockY = (host?.clientHeight ?? 600) - 28
-                return {
-                  '--restore-dx': `${dockX - r.x}px`,
-                  '--restore-dy': `${dockY - (r.y + r.h)}px`,
-                }
-              })()
+              const host = hostRef.current
+              const dockX = 10
+              const dockY = (host?.clientHeight ?? 600) - 28
+              return {
+                '--restore-dx': `${dockX - r.x}px`,
+                '--restore-dy': `${dockY - (r.y + r.h)}px`,
+              }
+            })()
             : undefined
 
           return (
