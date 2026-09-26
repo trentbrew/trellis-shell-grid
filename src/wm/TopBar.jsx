@@ -14,7 +14,6 @@ import {
   Search,
   Rows2,
   SquareStack,
-  Table,
   Trash2,
   Waypoints,
 } from 'lucide-react'
@@ -28,7 +27,6 @@ import { GROUP_COLORS, KIND_LIST, ACTIVE_MODES } from './model'
 const MODE_ICONS = {
   tabs: SquareStack,
   stack: Rows2,
-  table: Table,
   grid: LayoutGrid,
   freeform: Grip,
   niri: Columns2,

@@ -5,7 +5,7 @@
   "identifier": "com.turtle.grid",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:5555",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },

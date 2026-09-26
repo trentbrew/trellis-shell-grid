@@ -1,5 +1,4 @@
 import { layoutGrid } from './grid'
-import { layoutTable } from './table'
 import { layoutFreeform } from './freeform'
 import { layoutNiri } from './niri'
 import { layoutFloating } from './floating'
@@ -9,7 +8,6 @@ import { layoutStack } from './stack'
 
 export const layouts = {
   grid: layoutGrid,
-  table: layoutTable,
   freeform: layoutFreeform,
   niri: layoutNiri,
   floating: layoutFloating,

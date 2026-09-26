@@ -55,7 +55,6 @@ export const STATUSES = {
 export const LAYOUT_MODES = [
   { id: 'tabs', label: 'Tabs', hint: 'One at a time' },
   { id: 'stack', label: 'Stack', hint: 'Offset deck' },
-  { id: 'table', label: 'Table', hint: 'Grid table' },
   { id: 'niri', label: 'Niri', hint: 'Horizontal strip' },
   { id: 'grid', label: 'Grid', hint: 'Uniform cells' },
   { id: 'fibonacci', label: 'Fibonacci', hint: 'Spiral tile' },

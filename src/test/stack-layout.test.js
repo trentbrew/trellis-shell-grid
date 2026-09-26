@@ -114,6 +114,23 @@ describe('layoutStack', () => {
     }
   })
 
+  it('back windows are offset downward from the front', () => {
+    const windows = makeWindows(4)
+    const result = layoutStack({ windows, viewport, focusId: windows[0].id })
+    const order = frontToBack(result.rects, windows)
+    const frontY = result.rects[order[0]].y
+    const backY = result.rects[order[order.length - 1]].y
+    expect(backY).toBeGreaterThan(frontY)
+  })
+
+  it('front window matches viewport aspect ratio', () => {
+    const windows = makeWindows(3)
+    const result = layoutStack({ windows, viewport, focusId: windows[0].id })
+    const order = frontToBack(result.rects, windows)
+    const front = result.rects[order[0]]
+    expect(front.w / front.h).toBeCloseTo(viewport.w / viewport.h, 2)
+  })
+
   it('backward adjacent focus changes shift non-involved windows in lockstep', () => {
     const windows = makeWindows(5)
     const resultC = layoutStack({ windows, viewport, focusId: windows[2].id })
